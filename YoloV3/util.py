@@ -93,10 +93,10 @@ def predict_transform(prediction, inp_dim, anchors, num_classes, CUDA = True):
     
     return prediction
 
-def write_results(prediction, confidence, num_classes, nms_conf = 0.4):
+def write_results(prediction, confidence, num_classes, target_cls_index,nms_conf = 0.4):
     conf_mask = (prediction[:,:,4] > confidence).float().unsqueeze(2)
     prediction = prediction*conf_mask
-    
+    #prediction[:,:,5] in target_cls_index
     box_corner = prediction.new(prediction.shape)
     box_corner[:,:,0] = (prediction[:,:,0] - prediction[:,:,2]/2)
     box_corner[:,:,1] = (prediction[:,:,1] - prediction[:,:,3]/2)
@@ -114,11 +114,15 @@ def write_results(prediction, confidence, num_classes, nms_conf = 0.4):
         image_pred = prediction[ind]          #image Tensor
        #confidence threshholding 
        #NMS
-    
+        indexs = []
         max_conf, max_conf_score = torch.max(image_pred[:,5:5+ num_classes], 1)
         max_conf = max_conf.float().unsqueeze(1)
         max_conf_score = max_conf_score.float().unsqueeze(1)
         seq = (image_pred[:,:5], max_conf, max_conf_score)
+
+        # 将每个方框的(x1,y1,x2,y2,s)与得分最高的这个类的分数s_cls(max_conf)和对应类的序号index_cls(max_conf_score)在列维度上连接起来，
+        # 即将10647x5,10647x1,10647x1三个tensor 在列维度进行concatenate操作，得到一个10647x7的tensor,(x1,y1,x2,y2,s,s_cls,index_cls)。
+
         image_pred = torch.cat(seq, 1)
         
         non_zero_ind =  (torch.nonzero(image_pred[:,4]))
@@ -126,7 +130,13 @@ def write_results(prediction, confidence, num_classes, nms_conf = 0.4):
             image_pred_ = image_pred[non_zero_ind.squeeze(),:].view(-1,7)
         except:
             continue
-        
+
+        for index,num in enumerate(image_pred_):
+            if (num[-1] in target_cls_index):
+                indexs.append(index)
+            else:
+                continue
+        image_pred_ = image_pred_[indexs]
         if image_pred_.shape[0] == 0:
             continue       
 #        

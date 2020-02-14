@@ -5,6 +5,7 @@ import torch.nn as nn
 from torch.autograd import Variable
 import numpy as np
 import cv2
+import os
 from YoloV3.util import *
 import argparse
 from YoloV3.darknet import Darknet
@@ -15,7 +16,6 @@ def arg_parse():
     """
     Parse arguements to the detect module
     """
-    
     parser = argparse.ArgumentParser(description='YOLO v3 Detection Module')
     parser.add_argument("--bs", dest = "bs", help = "Batch size", default = 1)
     parser.add_argument("--confidence", dest = "confidence", help = "Object Confidence to filter predictions", default = 0.5)
@@ -31,8 +31,13 @@ def arg_parse():
                         default = "416", type = str)
     parser.add_argument("--video", dest = "videofile", help = "Video file to     run detection on",
                         default = "jet.mp4", type = str)
-    
+    parser.add_argument("--save_path",dest = "save_path",help = "Results path",
+                        default="results/YoloV3-results.avi",type = str)
+    parser.add_argument("--targets",dest = "targets",help = "The targets,split with , ",
+                        default = "all",type = str)
+
     return parser.parse_args()
+
 def write(x, results):
     c1 = tuple(x[1:3].int())
     c2 = tuple(x[3:5].int())
@@ -57,13 +62,33 @@ CUDA = torch.cuda.is_available()
 classes = load_classes("models/coco.names")
 colors = pkl.load(open("YoloV3/pallete", "rb"))
 num_classes = 80
-
+target_cls_index = [] #存放目标序号的数组
+targets = args.targets#搜索类别的名称
 
 #Set up the neural network
 print("加载网络中.....")
 model = Darknet(args.cfgfile)
 model.load_weights(args.weightsfile)
 print("网络加载完成")
+
+#Set the searching targets index list 列出搜寻目标序号
+if (targets == 'all'):
+    print("默认检测所有物品类型...")
+    targets_index = -1
+    target_cls_index = range(0,79,1)
+
+else:
+    targets_class = targets.split(',')
+    for i,value in enumerate(targets_class):
+        try:
+            target_cls_index.append(classes.index(targets_class[i]))
+        except ValueError:
+            print("找不到 {0} 这个类别!".format(targets_class[i]))
+
+if(len(target_cls_index) == 0):
+    print("无搜索类别，程序结束！")
+    os._exit(0)
+
 
 model.net_info["height"] = args.reso
 inp_dim = int(model.net_info["height"])
@@ -78,7 +103,6 @@ if CUDA:
 #Set the model in evaluation mode
 model.eval()
 
-
 #Detection phase
 
 videofile = args.videofile #or path to the video file.
@@ -90,6 +114,10 @@ assert cap.isOpened(), '无法打开视频文件或者摄像头'
 frames = 0  
 start = time.time()
 
+ret,frame = cap.read()
+fourcc = cv2.VideoWriter_fourcc('M','J','P','G')
+videoWriter = cv2.VideoWriter(args.save_path, fourcc, 20,
+                              (frame.shape[1], frame.shape[0])) # 最后为视频图片的形状
 while cap.isOpened():
     ret, frame = cap.read()
     
@@ -104,12 +132,17 @@ while cap.isOpened():
         
         with torch.no_grad():
             output = model(Variable(img), CUDA)
-        output = write_results(output, confidence, num_classes,
+        output = write_results(output, confidence, num_classes,target_cls_index,
                                nms_conf = nms_thesh)
-#, volatile = True
+
         if type(output) == int:
             frames += 1
             print("FPS:{:5.4f}".format( frames / (time.time() - start)))
+            t_size = cv2.getTextSize("FPS:{:5.2f}".format(fps),
+                                     cv2.FONT_HERSHEY_DUPLEX, 1, 9)[0]
+            cv2.putText(frame, "FPS:{:5.2f}".format(fps), (t_size[0], t_size[1] * 3),
+                        cv2.FONT_HERSHEY_DUPLEX, 1, [0, 255, 0], 1, 9, False)
+            videoWriter.write(frame)
             cv2.imshow("frame", frame)
             key = cv2.waitKey(1)
             if key & 0xFF == ord('q'):
@@ -141,12 +174,9 @@ while cap.isOpened():
 
         print("Time:{:.6f}".format(time.time() - start))
         print("FPS:{:5.2f}".format(fps))
+        videoWriter.write(frame)
         cv2.imshow("frame", frame)
+
     else:
-        break     
-
-
-
-
-
-
+        videoWriter.release()
+        break
