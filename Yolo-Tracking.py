@@ -4,20 +4,16 @@ import torch
 import torch.nn as nn
 from torch.autograd import Variable
 import numpy as np
-import cv2 
+import cv2
 from YoloV3.util import *
 import argparse
-import os 
-import os.path as osp
 from YoloV3.darknet import Darknet
 import pickle as pkl
-import pandas as pd
 import random
 
 def arg_parse():
     """
     Parse arguements to the detect module
-    
     """
     
     parser = argparse.ArgumentParser(description='YOLO v3 Detection Module')
@@ -37,26 +33,37 @@ def arg_parse():
                         default = "jet.mp4", type = str)
     
     return parser.parse_args()
-    
+def write(x, results):
+    c1 = tuple(x[1:3].int())
+    c2 = tuple(x[3:5].int())
+    img = results
+    cls = int(x[-1])
+    color = random.choice(colors)
+    label = "{0}".format(classes[cls])
+    cv2.rectangle(img, c1, c2,color, 1)
+    t_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_PLAIN, 1 , 1)[0]
+    c2 = c1[0] + t_size[0] + 3, c1[1] + t_size[1] + 4
+    cv2.rectangle(img, c1, c2,color, -1)
+    cv2.putText(img, label, (c1[0], c1[1] + t_size[1] + 4),
+                cv2.FONT_HERSHEY_PLAIN, 1, [225,255,255], 1);
+    return img
+
 args = arg_parse()
 batch_size = int(args.bs)
 confidence = float(args.confidence)
 nms_thesh = float(args.nms_thresh)
 start = 0
 CUDA = torch.cuda.is_available()
-
-
-
-num_classes = 80
 classes = load_classes("models/coco.names")
-
+colors = pkl.load(open("YoloV3/pallete", "rb"))
+num_classes = 80
 
 
 #Set up the neural network
-print("Loading network.....")
+print("加载网络中.....")
 model = Darknet(args.cfgfile)
 model.load_weights(args.weightsfile)
-print("Network successfully loaded")
+print("网络加载完成")
 
 model.net_info["height"] = args.reso
 inp_dim = int(model.net_info["height"])
@@ -72,31 +79,13 @@ if CUDA:
 model.eval()
 
 
-
-def write(x, results):
-    c1 = tuple(x[1:3].int())
-    c2 = tuple(x[3:5].int())
-    img = results
-    cls = int(x[-1])
-    color = random.choice(colors)
-    label = "{0}".format(classes[cls])
-    cv2.rectangle(img, c1, c2,color, 1)
-    t_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_PLAIN, 1 , 1)[0]
-    c2 = c1[0] + t_size[0] + 3, c1[1] + t_size[1] + 4
-    cv2.rectangle(img, c1, c2,color, -1)
-    cv2.putText(img, label, (c1[0], c1[1] + t_size[1] + 4), cv2.FONT_HERSHEY_PLAIN, 1, [225,255,255], 1);
-    return img
-
-
 #Detection phase
 
-videofile = args.videofile #or path to the video file. 
-
-cap = cv2.VideoCapture(videofile)  
-
+videofile = args.videofile #or path to the video file.
+cap = cv2.VideoCapture(videofile)
 #cap = cv2.VideoCapture(0)  for webcam
 
-assert cap.isOpened(), 'Cannot capture source'
+assert cap.isOpened(), '无法打开视频文件或者摄像头'
 
 frames = 0  
 start = time.time()
@@ -106,7 +95,6 @@ while cap.isOpened():
     
     if ret:   
         img = prep_image(frame, inp_dim)
-#        cv2.imshow("a", frame)
         im_dim = frame.shape[1], frame.shape[0]
         im_dim = torch.FloatTensor(im_dim).repeat(1,2)   
                      
@@ -115,20 +103,18 @@ while cap.isOpened():
             img = img.cuda()
         
         with torch.no_grad():
-            output = model(Variable(img, volatile = True), CUDA)
-        output = write_results(output, confidence, num_classes, nms_conf = nms_thesh)
-
-
+            output = model(Variable(img), CUDA)
+        output = write_results(output, confidence, num_classes,
+                               nms_conf = nms_thesh)
+#, volatile = True
         if type(output) == int:
             frames += 1
-            print("FPS of the video is {:5.4f}".format( frames / (time.time() - start)))
+            print("FPS:{:5.4f}".format( frames / (time.time() - start)))
             cv2.imshow("frame", frame)
             key = cv2.waitKey(1)
             if key & 0xFF == ord('q'):
                 break
             continue
-        
-        
         
 
         im_dim = im_dim.repeat(output.size(0), 1)
@@ -136,26 +122,26 @@ while cap.isOpened():
         
         output[:,[1,3]] -= (inp_dim - scaling_factor*im_dim[:,0].view(-1,1))/2
         output[:,[2,4]] -= (inp_dim - scaling_factor*im_dim[:,1].view(-1,1))/2
-        
         output[:,1:5] /= scaling_factor
 
         for i in range(output.shape[0]):
             output[i, [1,3]] = torch.clamp(output[i, [1,3]], 0.0, im_dim[i,0])
             output[i, [2,4]] = torch.clamp(output[i, [2,4]], 0.0, im_dim[i,1])
-    
-
-        classes = load_classes('models/coco.names')
-        colors = pkl.load(open("YoloV3/pallete", "rb"))
 
         list(map(lambda x: write(x, frame), output))
-        
-        cv2.imshow("frame", frame)
         key = cv2.waitKey(1)
         if key & 0xFF == ord('q'):
             break
         frames += 1
-        print(time.time() - start)
-        print("FPS of the video is {:5.2f}".format( frames / (time.time() - start)))
+        fps = frames / (time.time() - start)
+        t_size = cv2.getTextSize("FPS:{:5.2f}".format(fps),
+                                 cv2.FONT_HERSHEY_DUPLEX,1,9)[0]
+        cv2.putText(frame,"FPS:{:5.2f}".format(fps),(t_size[0],t_size[1]*3),
+                    cv2.FONT_HERSHEY_DUPLEX,1,[0,255,0],1,9,False)
+
+        print("Time:{:.6f}".format(time.time() - start))
+        print("FPS:{:5.2f}".format(fps))
+        cv2.imshow("frame", frame)
     else:
         break     
 

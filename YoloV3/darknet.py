@@ -8,7 +8,7 @@ import numpy as np
 import sys
 from os import path
 sys.path.append( path.dirname( path.dirname( path.abspath(__file__))))
-from util import * 
+from YoloV3.util import *
 
 
 
