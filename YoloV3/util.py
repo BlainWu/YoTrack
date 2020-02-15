@@ -131,6 +131,8 @@ def write_results(prediction, confidence, num_classes, target_cls_index,nms_conf
         except:
             continue
 
+        # searching for
+        # targets lines
         for index,num in enumerate(image_pred_):
             if (num[-1] in target_cls_index):
                 indexs.append(index)
@@ -138,8 +140,7 @@ def write_results(prediction, confidence, num_classes, target_cls_index,nms_conf
                 continue
         image_pred_ = image_pred_[indexs]
         if image_pred_.shape[0] == 0:
-            continue       
-#        
+            continue
   
         #Get the various classes detected in the image
         img_classes = unique(image_pred_[:,-1])  # -1 index holds the class index
