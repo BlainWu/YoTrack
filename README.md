@@ -2,7 +2,7 @@
 Realise a TDL system which realizes long term object tracking .The detection module is implemented by yolov3 .
 
 # Demo
-![Only-aeroplane](https://img-blog.csdnimg.cn/20200216163940371.gif)
+![Only-aeroplane](https://github.com/BlainWu/Damn_Homework/blob/master/search_aeroplane_search.gif)
 ## YoloV3: Tracking by detection
 Realize tracking only by detection :  **Yolo-Tracking.py**
 You can run it by:  (defaults detect all 80 kinds of objects)
